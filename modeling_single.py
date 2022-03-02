@@ -82,6 +82,7 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         )
         self.dropout = torch.nn.Dropout(classifier_dropout)
         self.classifier = torch.nn.Linear(config.hidden_size*2, config.num_labels)
+        # self.classifier = torch.nn.Linear(1300, config.num_labels)
 
         self.in_fc = torch.nn.Linear(self.config.hidden_size, d_model)
         self.transformer = TransformerEncoder(num_layers, d_model, n_heads, feedforward_dim, dropout,
@@ -109,15 +110,16 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         
         image_output = self.vit(image_ids)
         
-        # import pdb;pdb.set_trace()
         image_output = image_output['pooler_output']
 #        sequence_output = self.in_fc(sequence_output)
 #        sequence_output = self.transformer(sequence_output, mask)
 #        sequence_output = self.fc_dropout(sequence_output)
-        
+        # output = torch.cat([image_output['last_hidden_state'], sequence_output], 1)
         output = torch.cat([sequence_output, image_output.unsqueeze(1).repeat(1, 128, 1)], 2)
         # output = torch.cat([sequence_output, image_output.unsqueeze(1)], 1)
+        # print(output.shape)
 
+        # import pdb;pdb.set_trace()
         logits = self.classifier(output)
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here

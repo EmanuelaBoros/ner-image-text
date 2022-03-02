@@ -54,8 +54,20 @@ class InputFeatures(object):
         
         
 from PIL import Image
-
-
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import cv2
+train_transform = A.Compose(
+    [
+        A.SmallestMaxSize(max_size=160),
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.5),
+        A.RandomCrop(height=128, width=128),
+        A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.5),
+        A.RandomBrightnessContrast(p=0.5),
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        # ToTensorV2(),
+    ]
+)
 def read_examples_from_file(data_dir, language_code, mode):
     # file_path = os.path.join(data_dir, "{}_{}.conll".format(language_code, mode))
     file_path = os.path.join(data_dir, "{}.conll".format(mode))
@@ -77,13 +89,23 @@ def read_examples_from_file(data_dir, language_code, mode):
                         lines[guid_index-1].replace("# id", "").split('\t')[0].replace('"', '').strip() + '.png'
                     # import pdb;pdb.set_trace()
                     if os.path.exists(image):
-                        temp = Image.open(image)
-                        keep = temp.copy()
+                        
+                        image = cv2.imread(image)
+                        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+                        # temp = Image.open(image)
+                        # keep = temp.copy()
                         examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
                                                                  words=words,
                                                                  labels=labels,
-                                                                 image=keep))
-                        temp.close()          
+                                                                 image=image))
+                        # temp.close()          
+                        image = train_transform(image=image)["image"]
+                        examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
+                                                                 words=words,
+                                                                 labels=labels,
+                                                                 image=image))
+                        # import pdb;pdb.set_trace()
                         guid_index += 1
                         words = []
                         labels = []
@@ -98,13 +120,21 @@ def read_examples_from_file(data_dir, language_code, mode):
         if words:
             image = 'data/conll2003_images/gen_images_2003/' + lines[guid_index-1].replace("# id", "").split('\t')[0].strip() + '.png'
             if os.path.exists(image):
-                temp = Image.open(image)
-                keep = temp.copy()
+                image = cv2.imread(image)
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # temp = Image.open(image)
+                # keep = temp.copy()
                 examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
                                                          words=words,
                                                          labels=labels,
-                                                         image=keep))
-                temp.close()          
+                                                         image=image))
+                # temp.close()     
+                image = train_transform(image=image)["image"]
+                examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
+                                                         words=words,
+                                                         labels=labels,
+                                                         image=image))
+
     return examples
 
 from transformers import ViTFeatureExtractor, ViTModel
