@@ -488,27 +488,27 @@ def load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode, l
         logger.info("    len of features: {}".format(len(features)))
 
     # import pdb;pdb.set_trace()
-    train_features, eval_features = torch.utils.data.random_split(features, (int(90/100*len(features)), int(10/100*len(features))))
+    # train_features, eval_features = torch.utils.data.random_split(features, (int(90/100*len(features)), int(10/100*len(features))))
 
-    all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long)
-    all_input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long)
-    all_segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long)
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    all_input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.long)
+    all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
     
-    all_image_ids = torch.stack([f.image_ids for f in train_features])
-    all_label_ids = torch.tensor([f.label_ids for f in train_features], dtype=torch.long)
+    all_image_ids = torch.stack([f.image_ids for f in features])
+    all_label_ids = torch.tensor([f.label_ids for f in features], dtype=torch.long)
     # import pdb;pdb.set_trace()
 
-    train_dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_image_ids, all_label_ids)
-    # Convert to Tensors and build dataset
-    all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
-    all_input_mask = torch.tensor([f.input_mask for f in eval_features], dtype=torch.long)
-    all_segment_ids = torch.tensor([f.segment_ids for f in eval_features], dtype=torch.long)
-    all_image_ids = torch.stack([f.image_ids for f in eval_features])
-    all_label_ids = torch.tensor([f.label_ids for f in eval_features], dtype=torch.long)
+    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_image_ids, all_label_ids)
+    # # Convert to Tensors and build dataset
+    # all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
+    # all_input_mask = torch.tensor([f.input_mask for f in eval_features], dtype=torch.long)
+    # all_segment_ids = torch.tensor([f.segment_ids for f in eval_features], dtype=torch.long)
+    # all_image_ids = torch.stack([f.image_ids for f in eval_features])
+    # all_label_ids = torch.tensor([f.label_ids for f in eval_features], dtype=torch.long)
 
-    eval_dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_image_ids, all_label_ids)
+    # eval_dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_image_ids, all_label_ids)
     
-    return train_dataset, eval_dataset
+    return dataset#, eval_dataset
 
 
 def get_src_probs(args, dataset, model_class, src_lang):
@@ -709,7 +709,7 @@ def main():
         torch.distributed.init_process_group(backend="nccl")
         args.n_gpu = 1
         
-    device = 'cpu'
+    # device = 'cpu'
     args.device = device
 
     # Setup logging
@@ -785,12 +785,15 @@ def main():
       if args.local_rank == 0:
           torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
-      # model.to(args.device)
+      model.to(args.device)
 
       # prepare target training plain text
-      train_dataset, eval_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="train" + args.context, 
+      train_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="train_small" + args.context, 
                                               language_code=args.language_code)
-
+      eval_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="test_small" + args.context, 
+                                              language_code=args.language_code)
+      
+      
       # from torch.utils.data import DataLoader, Subset
       # from sklearn.model_selection import train_test_split
         

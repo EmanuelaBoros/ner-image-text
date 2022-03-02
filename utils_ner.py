@@ -77,6 +77,7 @@ def read_examples_from_file(data_dir, language_code, mode):
     with open('data/conll2003_images/en_train_names.txt', 'r') as f:
         lines = f.readlines()
     
+    # import pdb;pdb.set_trace()
     guid_index = 1
     examples = []
     with open(file_path, encoding="utf-8") as f:
@@ -99,13 +100,14 @@ def read_examples_from_file(data_dir, language_code, mode):
                                                                  words=words,
                                                                  labels=labels,
                                                                  image=image))
-                        # temp.close()          
-                        image = train_transform(image=image)["image"]
-                        examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
-                                                                 words=words,
-                                                                 labels=labels,
-                                                                 image=image))
-                        # import pdb;pdb.set_trace()
+                        # temp.close()
+                        if 'train' in mode:
+                            image = train_transform(image=image)["image"]
+                            examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
+                                                                     words=words,
+                                                                     labels=labels,
+                                                                     image=image))
+                            # import pdb;pdb.set_trace()
                         guid_index += 1
                         words = []
                         labels = []
@@ -128,12 +130,13 @@ def read_examples_from_file(data_dir, language_code, mode):
                                                          words=words,
                                                          labels=labels,
                                                          image=image))
-                # temp.close()     
-                image = train_transform(image=image)["image"]
-                examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
-                                                         words=words,
-                                                         labels=labels,
-                                                         image=image))
+                # temp.close()
+                if 'train' in mode:
+                    image = train_transform(image=image)["image"]
+                    examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
+                                                             words=words,
+                                                             labels=labels,
+                                                             image=image))
 
     return examples
 
