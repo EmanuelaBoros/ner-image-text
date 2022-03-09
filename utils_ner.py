@@ -68,26 +68,44 @@ train_transform = A.Compose(
         # ToTensorV2(),
     ]
 )
+
+# train_transforms = transforms.Compose(
+#     [
+#         transforms.Resize((224, 224)),
+#         transforms.RandomResizedCrop(224),
+#         transforms.RandomHorizontalFlip(),
+#         transforms.ToTensor(),
+#     ]
+# )
+
+
 def read_examples_from_file(data_dir, language_code, mode):
     # file_path = os.path.join(data_dir, "{}_{}.conll".format(language_code, mode))
     file_path = os.path.join(data_dir, "{}.conll".format(mode))
     print(file_path)
     # file_path = os.path.join(data_dir, "{}.part.txt".format(mode)) # for debug
     
-    with open('data/conll2003_images/en_train_names.txt', 'r') as f:
-        lines = f.readlines()
+    # with open('data/conll2003_images/en_train_names.txt', 'r') as f:
+    #     lines = f.readlines()
     
     # import pdb;pdb.set_trace()
-    guid_index = 1
+    guid_index = 0
+    word_index = 0
+    doc_index = 0
     examples = []
     with open(file_path, encoding="utf-8") as f:
         words = []
         labels = []
         for line in f:
+            if line.startswith("-DOCSTART-"):
+                doc_index += 1
+                #docd_1_ph_3.final.png#
             if line.startswith("-DOCSTART-") or line.startswith("# id") or line == "" or line == "\n":
                 if words:
-                    image = 'data/conll2003_images/gen_images_2003/' + \
-                        lines[guid_index-1].replace("# id", "").split('\t')[0].replace('"', '').strip() + '.png'
+                    # image = 'data/conll2003_images/' + mode + '/' + \
+                    #     lines[guid_index-1].replace("# id", "").split('\t')[0].replace('"', '').strip() + '.final.png'
+                    
+                    image = 'data/conll2003_images/' + mode + '/doc_' + str(doc_index) + '_ph_' + str(word_index+1) + '.final.png'
                     # import pdb;pdb.set_trace()
                     if os.path.exists(image):
                         
@@ -109,9 +127,15 @@ def read_examples_from_file(data_dir, language_code, mode):
                                                                      image=image))
                             # import pdb;pdb.set_trace()
                         guid_index += 1
+                        word_index += 1
                         words = []
                         labels = []
+                    else:
+                        import pdb;pdb.set_trace()
+                        #
+                        print('data/conll2003_images/' + mode + '/doc_' + str(doc_index) + '_ph_' + str(word_index+1) + '.final.png')
             else:
+                word_index = 0
                 splits = line.split(" ")
                 words.append(splits[0])
                 if len(splits) > 1:
@@ -120,7 +144,9 @@ def read_examples_from_file(data_dir, language_code, mode):
                     # Examples could have no label for mode = "test"
                     labels.append("O")
         if words:
-            image = 'data/conll2003_images/gen_images_2003/' + lines[guid_index-1].replace("# id", "").split('\t')[0].strip() + '.png'
+            # image = 'data/conll2003_images/' + mode + '/' + lines[guid_index-1].replace("# id", "").split('\t')[0].strip() + '.final.png'
+            image = 'data/conll2003_images/' + mode + '/doc_' + str(doc_index) + '_ph_' + str(word_index+1) + '.final.png'
+            # import pdb;pdb.set_trace()
             if os.path.exists(image):
                 image = cv2.imread(image)
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -137,6 +163,9 @@ def read_examples_from_file(data_dir, language_code, mode):
                                                              words=words,
                                                              labels=labels,
                                                              image=image))
+            else:
+                import pdb;pdb.set_trace()
+                print('data/conll2003_images/' + mode + '/doc_' + str(doc_index) + '_ph_' + str(word_index+1) + '.final.png')
 
     return examples
 

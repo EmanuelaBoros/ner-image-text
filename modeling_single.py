@@ -3,6 +3,11 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from transformers import BigBirdForTokenClassification, BertPreTrainedModel, RobertaPreTrainedModel, BertModel, BertForTokenClassification
 from transformers import AutoModelForTokenClassification, AutoModel
 from modules.transformer import TransformerEncoder, MultiHeadAttn, TransformerLayer
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.models as models
+from einops import rearrange
+from torch import Tensor
 
 num_layers = 2
 n_heads = 8
@@ -59,6 +64,49 @@ fc_dropout = 0.4
 #      self.classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
 #  
 #      self.init_weights()
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        self.max_len = max_len
+        self.d_model = d_model
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(1, max_len, d_model)
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe)
+        
+
+    def forward(self) -> Tensor:
+        x = self.pe[0, : self.max_len]
+        return self.dropout(x).unsqueeze(0)
+    
+class ResNetFeatureExtractor(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        # Making the resnet 50 model, which was used in the docformer for the purpose of visual feature extraction
+
+        resnet50 = models.resnet50(pretrained=True)
+        modules = list(resnet50.children())[:-2]
+        self.resnet50 = nn.Sequential(*modules)
+
+        # Applying convolution and linear layer
+
+        self.conv1 = nn.Conv2d(2048, 768, 1)
+        self.relu1 = F.relu
+        self.linear1 = nn.Linear(49, 128)
+
+    def forward(self, x):
+        # import pdb;pdb.set_trace()
+        x = self.resnet50(x)
+        x = self.conv1(x)
+        x = self.relu1(x)
+        x = rearrange(x, "b e w h -> b e (w h)")  # b -> batch, e -> embedding dim, w -> width, h -> height
+        x = self.linear1(x)
+        x = rearrange(x, "b e s -> b s e")  # b -> batch, e -> embedding dim, s -> sequence length
+        return x
 
 from transformers import ViTFeatureExtractor, ViTModel
 
@@ -73,9 +121,9 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        self.bert = BertModel(config, add_pooling_layer=False)
-
-        self.vit = ViTModel.from_pretrained(IMAGE_MODEL)
+        self.language_feature = BertModel(config, add_pooling_layer=False)
+        self.visual_feature = ResNetFeatureExtractor()
+        self.visual_transformer = ViTModel.from_pretrained(IMAGE_MODEL)
 
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
@@ -98,25 +146,27 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         
       
 #        mask = attention_mask.ne(0)
-        outputs = self.bert(input_ids,
+        outputs = self.language_feature(input_ids,
                             attention_mask=attention_mask,
                             token_type_ids=token_type_ids,
                             position_ids=position_ids,
                             head_mask=head_mask)
 
         sequence_output = outputs[0]
-#        import pdb;pdb.set_trace()
         sequence_output = self.dropout(sequence_output)
         
-        image_output = self.vit(image_ids)
+        image_output = self.visual_transformer(image_ids)
         image_output = image_output['pooler_output']
         
 #        sequence_output = self.in_fc(sequence_output)
 #        sequence_output = self.transformer(sequence_output, mask)
 #        sequence_output = self.fc_dropout(sequence_output)
         # output = torch.cat([image_output['last_hidden_state'], sequence_output], 1)
-        
-        sequence_output = torch.cat([sequence_output, image_output.unsqueeze(1).repeat(1, 128, 1)], 2)
+        visual_feature = self.visual_feature(image_ids)
+        # import pdb;pdb.set_trace()
+
+        # sequence_output = torch.cat([sequence_output, image_output.unsqueeze(1).repeat(1, 128, 1)], 2)
+        sequence_output = torch.cat([sequence_output, visual_feature], 2)
         # output = torch.cat([sequence_output, image_output.unsqueeze(1)], 1)
         # print(output.shape)
 
