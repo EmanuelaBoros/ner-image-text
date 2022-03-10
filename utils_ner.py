@@ -59,7 +59,7 @@ from albumentations.pytorch import ToTensorV2
 import cv2
 train_transform = A.Compose(
     [
-        A.SmallestMaxSize(max_size=160),
+        A.SmallestMaxSize(max_size=128),
         A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.5),
         A.RandomCrop(height=128, width=128),
         A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.5),
@@ -112,7 +112,16 @@ def read_examples_from_file(data_dir, language_code, mode):
                         image = cv2.imread(image)
                         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-                        # temp = Image.open(image)
+                        # input_image = self.image_feature_extractor(images=image_path, return_tensors="pt", 
+                        #                                             max_length=self.max_len, 
+                        #                                             padding='max_length', truncation=True)
+                        # input_image = self.image_feature_extractor(
+                        #     images=image_path,
+                        #     return_tensors="pt",
+                        #     max_length=self.max_len,
+                        #     padding='max_length',
+                        #     truncation=True)
+
                         # keep = temp.copy()
                         examples.append(InputExample(guid="{}-{}".format(mode, guid_index),
                                                                  words=words,

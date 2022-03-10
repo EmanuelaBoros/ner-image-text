@@ -97,7 +97,7 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
     for name, param in model.named_parameters():
       if 'bert' in name:
         encoder.append(param)
-      elif 'vit' in name:
+      elif 'res' in name:
         decoder.append(param)
     # import pdb;pdb.set_trace()
 
@@ -226,7 +226,7 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
 
     return global_step, tr_loss / global_step
 
-def train_KD(args, model, train_dataset, src_probs, tokenizer, labels, pad_token_label_id):
+def train_KD(args, model, train_dataset, eval_dataset, src_probs, tokenizer, labels, pad_token_label_id):
     """ Train the model """
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter(log_dir=args.log_dir)
