@@ -91,23 +91,6 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay) and p.requires_grad],
          "weight_decay": 0.0}
     ]
-    
-    encoder = []
-    decoder = []
-    for name, param in model.named_parameters():
-      if 'bert' in name:
-        encoder.append(param)
-      elif 'res' in name:
-        decoder.append(param)
-    # import pdb;pdb.set_trace()
-
-    # optimizer = torch.optim.SGD([{'params':encoder}, {'params':decoder}], lr=DEFOULT_LRATE, nesterov=True)
-    optimizer = AdamW([{'params':encoder}, {'params':decoder}], lr=args.learning_rate, eps=args.adam_epsilon)
-
-    optimizer.param_groups[0]['lr'] = args.learning_rate
-    optimizer.param_groups[1]['lr'] = 3e-5
-
-
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     # scheduler = WarmupLinearSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
 #    scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps=int(t_total*args.warmup_ratio), t_total=t_total)
@@ -226,7 +209,7 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
 
     return global_step, tr_loss / global_step
 
-def train_KD(args, model, train_dataset, eval_dataset, src_probs, tokenizer, labels, pad_token_label_id):
+def train_KD(args, model, train_dataset, src_probs, tokenizer, labels, pad_token_label_id):
     """ Train the model """
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter(log_dir=args.log_dir)
@@ -805,9 +788,9 @@ def main():
       model.to(args.device)
 
       # prepare target training plain text
-      train_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="train" + args.context, 
+      train_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="train_small" + args.context, 
                                               language_code=args.language_code)
-      eval_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="test" + args.context, 
+      eval_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="test_small" + args.context, 
                                               language_code=args.language_code)
       
       
