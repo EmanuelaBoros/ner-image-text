@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-'''https://github.com/fastnlp/TENER/'''
 import torch
 from torch import nn
 import torch.nn.functional as F

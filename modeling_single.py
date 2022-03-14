@@ -172,7 +172,7 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = torch.nn.Dropout(classifier_dropout)
-        self.classifier = torch.nn.Linear(config.hidden_size * 3, config.num_labels)
+        self.classifier = torch.nn.Linear(config.hidden_size * 1, config.num_labels)
         self.aux_classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
         # self.classifier = torch.nn.Linear(1300, config.num_labels)
 
@@ -192,6 +192,7 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         elif attn_type == 'adatrans':
             self.self_attention_text = RelativeMultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
             self.self_attention_image = RelativeMultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
+            self.self_attention_text_image = RelativeMultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
             
         self.text_transformer_layer = TransformerLayer(d_model, deepcopy(self.self_attention_text), feedforward_dim, after_norm, dropout)
         self.image_transformer_layer = TransformerLayer(d_model, deepcopy(self.self_attention_image), feedforward_dim, after_norm, dropout)
@@ -250,9 +251,12 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         # output = torch.cat([sequence_output, image_output.unsqueeze(1)], 1)
         # print(output.shape)
         # import pdb;pdb.set_trace()
-        final_output = torch.cat((text_layer, image_layer, gated_converted_att_vis_embed), dim=-1)
+        # final_output = torch.cat((text_layer, image_layer, gated_converted_att_vis_embed), dim=-1)
+        # final_output = torch.cat((text_layer, image_layer), dim=-1)
         
-        logits = self.classifier(final_output)
+        # final_output = self.self_attention_text_image(final_output)
+        
+        logits = self.classifier(sequence_output)
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 

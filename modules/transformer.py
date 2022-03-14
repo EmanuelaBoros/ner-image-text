@@ -1,4 +1,4 @@
-
+# coding=utf-8
 
 import torch
 import torch.nn.functional as F
@@ -16,7 +16,7 @@ class MultiHeadAttn(nn.Module):
 
         :param d_model:
         :param n_head:
-        :param scale: 是否scale输出
+        :param scale: whether to scale output
         """
         super().__init__()
         assert d_model%n_head==0
@@ -62,13 +62,13 @@ class TransformerLayer(nn.Module):
     def __init__(self, d_model, self_attn, feedforward_dim, after_norm, dropout):
         """
 
-        :param int d_model: 一般512之类的
-        :param self_attn: self attention模块，输入为x:batch_size x max_len x d_model, mask:batch_size x max_len, 输出为
-            batch_size x max_len x d_model
-        :param int feedforward_dim: FFN中间层的dimension的大小
-        :param bool after_norm: norm的位置不一样，如果为False，则embedding可以直接连到输出
-        :param float dropout: 一共三个位置的dropout的大小
-        """
+         :param int d_model: generally 512 or the like
+         :param self_attn: self attention module, the input is x:batch_size x max_len x d_model, mask:batch_size x max_len, the output is
+             batch_size x max_len x d_model
+         :param int feedforward_dim: The size of the dimension of the FFN intermediate layer
+         :param bool after_norm: The position of norm is different. If it is False, the embedding can be directly connected to the output
+         :param float dropout: size of dropout in three positions
+         """
         super().__init__()
 
         self.norm1 = nn.LayerNorm(d_model)
@@ -88,7 +88,7 @@ class TransformerLayer(nn.Module):
         """
 
         :param x: batch_size x max_len x hidden_size
-        :param mask: batch_size x max_len, 为0的地方为pad
+        :param mask: batch_size x max_len, where 0 is pad
         :return: batch_size x max_len x hidden_size
         """
         residual = x
@@ -135,9 +135,9 @@ class TransformerEncoder(nn.Module):
     def forward(self, x, mask):
         """
 
-        :param x: batch_size x max_len
-        :param mask: batch_size x max_len. 有value的地方为1
-        :return:
+         :param x: batch_size x max_len
+         :param mask: batch_size x max_len. Where there is a value, it is 1        
+         :return:
         """
         if self.pos_embed is not None:
             x = x + self.pos_embed(mask)
@@ -233,6 +233,6 @@ class LearnedPositionalEmbedding(nn.Embedding):
         super().__init__(num_embeddings, embedding_dim, padding_idx)
 
     def forward(self, input):
-        # positions: batch_size x max_len, 把words的index输入就好了
+        # positions: batch_size x max_len
         positions = make_positions(input, self.padding_idx)
         return super().forward(positions)
