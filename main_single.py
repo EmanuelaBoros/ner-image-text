@@ -788,9 +788,9 @@ def main():
       model.to(args.device)
 
       # prepare target training plain text
-      train_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="train_small" + args.context, 
+      train_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="train" + args.context, 
                                               language_code=args.language_code)
-      eval_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="test_small" + args.context, 
+      eval_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode="test" + args.context, 
                                               language_code=args.language_code)
       
       

@@ -24,51 +24,6 @@ scale = attn_type == 'transformer'
 pos_embed = 'sin'
 fc_dropout = 0.4
 
-#class BertForTokenClassification_(BigBirdForTokenClassification):
-#class BertForTokenClassification_(BertForTokenClassification):
-#class AutoModelForTokenClassification_(AutoModelForTokenClassification):
-#    r"""
-#        **labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size, sequence_length)``:
-#            Labels for computing the token classification loss.
-#            Indices should be in ``[0, ..., config.num_labels - 1]``.
-#
-#    Outputs: `Tuple` comprising various elements depending on the configuration (config) and inputs:
-#        **loss**: (`optional`, returned when ``labels`` is provided) ``torch.FloatTensor`` of shape ``(1,)``:
-#            Classification loss.
-#        **scores**: ``torch.FloatTensor`` of shape ``(batch_size, sequence_length, config.num_labels)``
-#            Classification scores (before SoftMax).
-#        **hidden_states**: (`optional`, returned when ``config.output_hidden_states=True``)
-#            list of ``torch.FloatTensor`` (one for the output of each layer + the output of the embeddings)
-#            of shape ``(batch_size, sequence_length, hidden_size)``:
-#            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
-#        **attentions**: (`optional`, returned when ``config.output_attentions=True``)
-#            list of ``torch.FloatTensor`` (one for each layer) of shape ``(batch_size, num_heads, sequence_length, sequence_length)``:
-#            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention heads.
-#
-#    Examples::
-#
-#        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-#        model = BertForTokenClassification.from_pretrained('bert-base-uncased')
-#        input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1
-#        labels = torch.tensor([1] * input_ids.size(1)).unsqueeze(0)  # Batch size 1
-#        outputs = model(input_ids, labels=labels)
-#        loss, scores = outputs[:2]
-#
-#    """
-#    def __init__(self, config):
-#      super(BertForTokenClassification, self).__init__(config)
-#
-#
-#      self.num_labels = config.num_labels
-#  
-#      self.bert = AutoModel(config)
-#      self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-#      self.classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
-#  
-#      self.init_weights()
-
-
-
 from transformers import ViTFeatureExtractor, ViTModel
 from transformers import ImageClassificationPipeline, PerceiverForImageClassificationConvProcessing, PerceiverFeatureExtractor, PerceiverForImageClassificationLearned
 
