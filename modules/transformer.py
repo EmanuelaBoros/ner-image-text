@@ -41,6 +41,7 @@ class MultiHeadAttn(nn.Module):
         batch_size, max_len, d_model = x.size()
         x = self.qkv_linear(x)
         q, k, v = torch.chunk(x, 3, dim=-1)
+        # import pdb;pdb.set_trace()
         q = q.view(batch_size, max_len, self.n_head, -1).transpose(1, 2)
         k = k.view(batch_size, max_len, self.n_head, -1).permute(0, 2, 3, 1)
         v = v.view(batch_size, max_len, self.n_head, -1).transpose(1, 2)
@@ -57,6 +58,53 @@ class MultiHeadAttn(nn.Module):
 
         return v
 
+class MultiHeadAttnImage(nn.Module):
+    def __init__(self, d_model, n_head, dropout=0.1, scale=False):
+        """
+
+        :param d_model:
+        :param n_head:
+        :param scale: whether to scale output
+        """
+        super().__init__()
+        assert d_model%n_head==0
+
+        self.n_head = n_head
+        self.qkv_linear = nn.Linear(d_model, 2*d_model, bias=False)
+        self.fc = nn.Linear(d_model, d_model)
+        self.dropout_layer = nn.Dropout(dropout)
+
+        if scale:
+            self.scale = math.sqrt(d_model//n_head)
+        else:
+            self.scale = 1
+
+    def forward(self, x, mask, q):
+        """
+
+        :param x: bsz x max_len x d_model
+        :param mask: bsz x max_len
+        :return:
+        """
+        batch_size, max_len, d_model = x.size()
+        x = self.qkv_linear(x)
+        k, v = torch.chunk(x, 2, dim=-1)
+        # import pdb;pdb.set_trace()
+        q = q.view(batch_size, max_len, self.n_head, -1).transpose(1, 2)
+        k = k.view(batch_size, max_len, self.n_head, -1).permute(0, 2, 3, 1)
+        v = v.view(batch_size, max_len, self.n_head, -1).transpose(1, 2)
+
+        attn = torch.matmul(q, k)  # batch_size x n_head x max_len x max_len
+        attn = attn/self.scale
+        attn.masked_fill_(mask=mask[:, None, None].eq(0), value=float('-inf'))
+
+        attn = F.softmax(attn, dim=-1)  # batch_size x n_head x max_len x max_len
+        attn = self.dropout_layer(attn)
+        v = torch.matmul(attn, v)  # batch_size x n_head x max_len x d_model//n_head
+        v = v.transpose(1, 2).reshape(batch_size, max_len, -1)
+        v = self.fc(v)
+
+        return v
 
 class TransformerLayer(nn.Module):
     def __init__(self, d_model, self_attn, feedforward_dim, after_norm, dropout):
@@ -146,7 +194,94 @@ class TransformerEncoder(nn.Module):
             x = layer(x, mask)
         return x
 
+class TransformerLayerImage(nn.Module):
+    def __init__(self, d_model, self_attn, feedforward_dim, after_norm, dropout):
+        """
 
+         :param int d_model: generally 512 or the like
+         :param self_attn: self attention module, the input is x:batch_size x max_len x d_model, mask:batch_size x max_len, the output is
+             batch_size x max_len x d_model
+         :param int feedforward_dim: The size of the dimension of the FFN intermediate layer
+         :param bool after_norm: The position of norm is different. If it is False, the embedding can be directly connected to the output
+         :param float dropout: size of dropout in three positions
+         """
+        super().__init__()
+
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+
+        self.self_attn = self_attn
+
+        self.after_norm = after_norm
+
+        self.ffn = nn.Sequential(nn.Linear(d_model, feedforward_dim),
+                                 nn.ReLU(),
+                                 nn.Dropout(dropout),
+                                 nn.Linear(feedforward_dim, d_model),
+                                 nn.Dropout(dropout))
+
+    def forward(self, x, mask, q):
+        """
+
+        :param x: batch_size x max_len x hidden_size
+        :param mask: batch_size x max_len, where 0 is pad
+        :return: batch_size x max_len x hidden_size
+        """
+        residual = x
+        if not self.after_norm:
+            x = self.norm1(x)
+
+        x = self.self_attn(x, mask, q)
+        x = x + residual
+        if self.after_norm:
+            x = self.norm1(x)
+        residual = x
+        if not self.after_norm:
+            x = self.norm2(x)
+        x = self.ffn(x)
+        x = residual + x
+        if self.after_norm:
+            x = self.norm2(x)
+        return x
+    
+class TransformerEncoderImage(nn.Module):
+    def __init__(self, num_layers, d_model, n_head, feedforward_dim, dropout, after_norm=True, attn_type='naive',
+                 scale=False, dropout_attn=None, pos_embed=None):
+        super().__init__()
+        if dropout_attn is None:
+            dropout_attn = dropout
+        self.d_model = d_model
+
+        if pos_embed is None:
+            self.pos_embed = None
+        elif pos_embed == 'sin':
+            self.pos_embed = SinusoidalPositionalEmbedding(d_model, 0, init_size=1024)
+        elif pos_embed == 'fix':
+            self.pos_embed = LearnedPositionalEmbedding(1024, d_model, 0)
+        
+        attn_type = 'transformer'
+        if attn_type == 'transformer':
+            self_attn = MultiHeadAttnImage(d_model, n_head, dropout_attn, scale=scale)
+        elif attn_type == 'adatrans':
+            self_attn = RelativeMultiHeadAttn(d_model, n_head, dropout_attn, scale=scale)
+
+        self.layers = nn.ModuleList([TransformerLayerImage(d_model, deepcopy(self_attn), feedforward_dim, after_norm, dropout)
+                       for _ in range(num_layers)])
+
+    def forward(self, x, mask, q):
+        """
+
+         :param x: batch_size x max_len
+         :param mask: batch_size x max_len. Where there is a value, it is 1        
+         :return:
+        """
+        if self.pos_embed is not None:
+            x = x + self.pos_embed(mask)
+
+        for layer in self.layers:
+            x = layer(x, mask, q)
+        return x
+    
 def make_positions(tensor, padding_idx):
     """Replace non-padding symbols with their position numbers.
     Position numbers begin at padding_idx+1. Padding symbols are ignored.

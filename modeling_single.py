@@ -120,11 +120,12 @@ class ResNetFeatureExtractor(nn.Module):
 
         # Making the resnet 50 model, which was used in the docformer for the purpose of visual feature extraction
         self.resnet50 = PerceiverForImageClassificationLearned.from_pretrained("deepmind/vision-perceiver-learned")
+        
         # self.resnet50 = models.resnet50(pretrained=True)
         for param in self.resnet50.parameters():
             param.requires_grad = True
         
-        modules = list(self.resnet50.children())[:-3]
+        modules = list(self.resnet50.children())[:-2]
         self.resnet50 = nn.Sequential(*modules)
         for param in self.resnet50.parameters():
             param.requires_grad = True
@@ -148,7 +149,9 @@ class ResNetFeatureExtractor(nn.Module):
         return x
 
 from transformers import ViTFeatureExtractor, ViTModel
-from modules.transformer import TransformerEncoder, MultiHeadAttn, TransformerLayer, RelativeMultiHeadAttn
+from modules.transformer import (TransformerEncoder, MultiHeadAttn, 
+                                 TransformerLayer, RelativeMultiHeadAttn, 
+                                 MultiHeadAttnImage, TransformerEncoderImage)
 from copy import deepcopy
 
 IMAGE_MODEL = 'google/vit-base-patch16-224'
@@ -185,17 +188,21 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         # Initialize weights and apply final processing
 #        self.post_init()
 
-        attn_type = 'adatrans'
+        attn_type = 'transformer'
         if attn_type == 'transformer':
             self.self_attention_text = MultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
             self.self_attention_image = MultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
         elif attn_type == 'adatrans':
             self.self_attention_text = RelativeMultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
             self.self_attention_image = RelativeMultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
-            self.self_attention_text_image = RelativeMultiHeadAttn(d_model, n_heads, dropout_attn, scale=scale)
+        
+        self.self_attention_text_image = MultiHeadAttnImage(d_model, n_heads, dropout_attn, scale=scale)
             
         self.text_transformer_layer = TransformerLayer(d_model, deepcopy(self.self_attention_text), feedforward_dim, after_norm, dropout)
         self.image_transformer_layer = TransformerLayer(d_model, deepcopy(self.self_attention_image), feedforward_dim, after_norm, dropout)
+        
+        
+        self.text_image_encoder = TransformerEncoderImage(num_layers, d_model, n_heads, feedforward_dim, dropout)
         
         self.position_embeddings_v = PositionalEncoding(
             d_model=config.hidden_size * 2,
@@ -205,7 +212,7 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         
         self.gate = nn.Linear(config.hidden_size * 2, config.hidden_size)
 
-    def forward(self, input_ids, src_probs=None, attention_mask=None, token_type_ids=None, image_ids=None,
+    def forward(self, input_ids, src_probs=None, attention_mask=None, image_attention_mask=None, token_type_ids=None, image_ids=None,
                 position_ids=None, head_mask=None, labels=None, loss_ignore_index=-100):
         
       
@@ -219,44 +226,54 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         sequence_output = outputs[0]
         sequence_output = self.dropout(sequence_output)
         
-        aux_addon_sequence_encoder = self.self_attention_text(sequence_output, attention_mask)
-        aux_addon_sequence_output = aux_addon_sequence_encoder[-1]
+        # aux_addon_sequence_encoder = self.self_attention_text(sequence_output, attention_mask)
+        # aux_addon_sequence_output = aux_addon_sequence_encoder[-1]
         
-        text_layer = self.text_transformer_layer(aux_addon_sequence_encoder, attention_mask)
+        # text_layer = self.text_transformer_layer(aux_addon_sequence_encoder, attention_mask)
 
-        aux_text_feats = self.aux_classifier(aux_addon_sequence_output)
+        # aux_text_feats = self.aux_classifier(aux_addon_sequence_output)
 
         image_output = self.visual_feature(image_ids)
+        
+        final_output = self.text_image_encoder(sequence_output, attention_mask, image_output)
+        # import pdb;pdb.set_trace()
         # image_output = image_output['pooler_output']
 
-        aux_addon_image_encoder = self.self_attention_image(image_output, attention_mask)
-        aux_addon_image_output = aux_addon_image_encoder[-1]
+        # aux_addon_image_encoder = self.self_attention_image(image_output, image_attention_mask)
+        # aux_addon_image_output = aux_addon_image_encoder[-1]
         
-        image_layer = self.image_transformer_layer(aux_addon_image_encoder, attention_mask)
+        # image_layer = self.image_transformer_layer(aux_addon_image_encoder, image_attention_mask)
 
-#        sequence_output = self.in_fc(sequence_output)
-#        sequence_output = self.transformer(sequence_output, mask)
-#        sequence_output = self.fc_dropout(sequence_output)
-        # output = torch.cat([image_output['last_hidden_state'], sequence_output], 1)
-        # visual_feature = self.visual_feature(image_ids)
+# #        sequence_output = self.in_fc(sequence_output)
+# #        sequence_output = self.transformer(sequence_output, mask)
+# #        sequence_output = self.fc_dropout(sequence_output)
+#         # output = torch.cat([image_output['last_hidden_state'], sequence_output], 1)
+#         # visual_feature = self.visual_feature(image_ids)
+#         # import pdb;pdb.set_trace()
+        
+#         merge_representation = torch.cat((aux_addon_sequence_encoder, aux_addon_image_encoder), dim=-1)
+#         gate_value = torch.sigmoid(self.gate(merge_representation))  # batch_size, text_len, hidden_dim
+#         gated_converted_att_vis_embed = torch.mul(gate_value, aux_addon_image_encoder)
+        
+#         # aux_addon_gated_output = torch.cat((aux_addon_sequence_encoder, gated_converted_att_vis_embed), dim=-1)
+        
+#         # sequence_output = torch.cat([sequence_output, image_output.unsqueeze(1).repeat(1, 128, 1)], 2)
+#         # output = torch.cat([sequence_output, image_output.unsqueeze(1)], 1)
+#         # print(output.shape)
         # import pdb;pdb.set_trace()
         
-        merge_representation = torch.cat((aux_addon_sequence_encoder, aux_addon_image_encoder), dim=-1)
-        gate_value = torch.sigmoid(self.gate(merge_representation))  # batch_size, text_len, hidden_dim
-        gated_converted_att_vis_embed = torch.mul(gate_value, aux_addon_image_encoder)
+        # final_output = torch.cat((sequence_output, image_output), dim=-1)
+#         final_output = torch.cat((text_layer, image_layer, gated_converted_att_vis_embed), dim=-1)
         
-        aux_addon_gated_output = torch.cat((aux_addon_sequence_encoder, gated_converted_att_vis_embed), dim=-1)
-        
-        # sequence_output = torch.cat([sequence_output, image_output.unsqueeze(1).repeat(1, 128, 1)], 2)
-        # output = torch.cat([sequence_output, image_output.unsqueeze(1)], 1)
-        # print(output.shape)
-        # import pdb;pdb.set_trace()
-        # final_output = torch.cat((text_layer, image_layer, gated_converted_att_vis_embed), dim=-1)
         # final_output = torch.cat((text_layer, image_layer), dim=-1)
-        
+        # final_mask = torch.cat((attention_mask, image_attention_mask), dim=-1)
+
+        # import pdb;pdb.set_trace()
+        # final_output = self.self_attention_text_image(final_output, final_mask)
+        # print(final_output.shape)
         # final_output = self.self_attention_text_image(final_output)
         
-        logits = self.classifier(sequence_output)
+        logits = self.classifier(final_output)
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
@@ -316,28 +333,7 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         return outputs  # (loss_KD), (loss), scores, (hidden_states), (attentions)
 
 
-#class BaseModel(BertPreTrainedModel):
-#    def __init__(self, config):
-#        super(BaseModel, self).__init__(config)
-#
-#        self.bert = BertModel(config)
-#        self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-#
-#        self.init_weights()
-#
-#    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None):
-#
-#        outputs = self.bert(input_ids,
-#                            attention_mask=attention_mask,
-#                            token_type_ids=token_type_ids,
-#                            position_ids=position_ids,
-#                            head_mask=head_mask)
-#
-#        # sequence_output = outputs[0]
-#        # pooled_output = outputs[1]
-#
-#        return outputs
-#
+
 
 class LIOutputLayer(torch.nn.Module):
     def __init__(self, hidden_size, hidden_dropout_prob, n_langs, gr_lambda=-1.0):

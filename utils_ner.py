@@ -45,9 +45,10 @@ class InputExample(object):
 class InputFeatures(object):
     """A single set of features of data."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, label_ids, image_ids):
+    def __init__(self, input_ids, input_mask, input_image_mask, segment_ids, label_ids, image_ids):
         self.input_ids = input_ids
         self.input_mask = input_mask
+        self.input_image_mask = input_image_mask
         self.segment_ids = segment_ids
         self.label_ids = label_ids
         self.image_ids = image_ids
@@ -176,7 +177,7 @@ IMAGE_MODEL = 'google/vit-base-patch16-224'
 feature_extractor = ViTFeatureExtractor.from_pretrained(IMAGE_MODEL)
 from transformers import ImageClassificationPipeline, PerceiverForImageClassificationConvProcessing, PerceiverFeatureExtractor
  
-feature_extractor = PerceiverFeatureExtractor()
+feature_extractor = PerceiverFeatureExtractor.from_pretrained("deepmind/vision-perceiver-learned")
 
 def convert_examples_to_features(examples,
                                  label_list,
@@ -265,24 +266,30 @@ def convert_examples_to_features(examples,
         # The mask has 1 for real tokens and 0 for padding tokens. Only real
         # tokens are attended to.
         input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+        input_image_mask = [1] * max_seq_length
 
         # Zero-pad up to the sequence length.
         padding_length = max_seq_length - len(input_ids)
         if pad_on_left:
             input_ids = ([pad_token] * padding_length) + input_ids
+            
             input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
+            
             segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
             label_ids = ([pad_token_label_id] * padding_length) + label_ids
         else:
             input_ids += ([pad_token] * padding_length)
+            
             input_mask += ([0 if mask_padding_with_zero else 1] * padding_length)
+            
             segment_ids += ([pad_token_segment_id] * padding_length)
             label_ids += ([pad_token_label_id] * padding_length)
-
+            
         assert len(input_ids) == max_seq_length
         assert len(input_mask) == max_seq_length
         assert len(segment_ids) == max_seq_length
         assert len(label_ids) == max_seq_length
+        assert len(input_image_mask) == max_seq_length
 
         if ex_index < 5:
             logger.info("*** Example ***")
@@ -299,10 +306,11 @@ def convert_examples_to_features(examples,
         image = Image.fromarray(example.image, 'RGB')
 
         image_ids = feature_extractor(images=image, return_tensors="pt").pixel_values.squeeze()
-
+        # import pdb;pdb.set_trace()
         features.append(
                 InputFeatures(input_ids=input_ids,
                               input_mask=input_mask,
+                              input_image_mask=input_image_mask,
                               segment_ids=segment_ids,
                               image_ids=image_ids,
                               label_ids=label_ids))

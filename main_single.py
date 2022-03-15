@@ -133,11 +133,12 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
             model.train()
             # batch = tuple(t.to(args.device) for t in batch)
             inputs = {"input_ids": batch[0].to(args.device),
-                      "attention_mask": batch[1].to(args.device),
-                      "token_type_ids": batch[2].to(args.device) if args.model_type in ["bert", "xlnet"] else None,
-                      "image_ids": batch[3].to(args.device),
+                      "attention_mask": batch[1].to(args.device),#all_input_image_mask
+                      "image_attention_mask": batch[2].to(args.device),#all_input_image_mask
+                      "token_type_ids": batch[3].to(args.device) if args.model_type in ["bert", "xlnet"] else None,
+                      "image_ids": batch[4].to(args.device),
                       # XLM and RoBERTa don"t use segment_ids
-                      "labels": batch[4].to(args.device) if len(batch) <= 5 else batch[-1]} # add hard-label scheme
+                      "labels": batch[5].to(args.device) if len(batch) <= 6 else batch[-1]} # add hard-label scheme
             
 #            import pdb;pdb.set_trace()
             outputs = model(**inputs)
@@ -396,10 +397,11 @@ def evaluate(args, model, eval_dataset, labels, pad_token_label_id, mode, prefix
         with torch.no_grad():
             inputs = {"input_ids": batch[0],
                       "attention_mask": batch[1],
-                      "token_type_ids": batch[2] if args.model_type in ["bert", "xlnet"] else None,
+                      "image_attention_mask": batch[2].to(args.device),#all_input_image_mask
+                      "token_type_ids": batch[3] if args.model_type in ["bert", "xlnet"] else None,
                       # XLM and RoBERTa don"t use segment_ids
-                      "image_ids": batch[3],
-                      "labels": batch[4]}
+                      "image_ids": batch[4],
+                      "labels": batch[5]}
             
             outputs = model(**inputs)
             try:
@@ -496,9 +498,10 @@ def load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode, l
     
     all_image_ids = torch.stack([f.image_ids for f in features])
     all_label_ids = torch.tensor([f.label_ids for f in features], dtype=torch.long)
+    all_input_image_mask = torch.tensor([f.input_image_mask for f in features], dtype=torch.long)
     # import pdb;pdb.set_trace()
 
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_image_ids, all_label_ids)
+    dataset = TensorDataset(all_input_ids, all_input_mask, all_input_image_mask, all_segment_ids, all_image_ids, all_label_ids)
     # # Convert to Tensors and build dataset
     # all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
     # all_input_mask = torch.tensor([f.input_mask for f in eval_features], dtype=torch.long)
