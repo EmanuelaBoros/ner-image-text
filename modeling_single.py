@@ -25,7 +25,7 @@ fc_dropout = 0.4
 
 from transformers import ViTFeatureExtractor, ViTModel
 from transformers import ImageClassificationPipeline, PerceiverForImageClassificationConvProcessing, PerceiverFeatureExtractor, PerceiverForImageClassificationLearned
-from biggan import BigGAN
+# from biggan import BigGAN
 
 # fmt: off
 class PreNorm(nn.Module):
@@ -317,7 +317,7 @@ class BertForTokenClassification_(BertPreTrainedModel):
         # self.vit = ViTModel.from_pretrained(IMAGE_MODEL)
         # self.visual_feature = ResNetFeatureExtractor()
         self.cnn_encoder = CNN_Encoder(max_len=self.max_len)
-        self.biggan = BigGAN.from_pretrained('biggan-deep-256')
+        # self.biggan = BigGAN.from_pretrained('biggan-deep-256')
 
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
