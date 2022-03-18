@@ -10,7 +10,7 @@ import torchvision.models as models
 from einops import rearrange
 from torch import Tensor
 import math
-num_layers = 2
+num_layers = 1
 n_heads = 6
 head_dims = 128
 d_model = n_heads * head_dims
@@ -322,7 +322,7 @@ class BertForTokenClassification_(BertPreTrainedModel):
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = torch.nn.Dropout(classifier_dropout)
-        self.classifier = torch.nn.Linear(config.hidden_size * 3, config.num_labels)
+        self.classifier = torch.nn.Linear(config.hidden_size * 4, config.num_labels)
         self.aux_classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
         # self.classifier = torch.nn.Linear(1300, config.num_labels)
 
@@ -407,9 +407,17 @@ class BertForTokenClassification_(BertPreTrainedModel):
         
         kv = self.qv_linear2(sequence_output)
         k, v = torch.chunk(kv, chunks=2, dim=-1)
-        text_image, weighted_attns, alphas = self.text_image_encoder(image_encoded, image_attention_mask, q, k, v)
+        image_text, weighted_attns, alphas = self.text_image_encoder(image_encoded, image_attention_mask, q, k, v)
         alphas = self.adaptive_pool(alphas[0])
         
+        q = sequence_output
+
+        kv = self.qv_linear2(image_encoded)
+        k, v = torch.chunk(kv, chunks=2, dim=-1)
+        text_image, _, _ = self.text_image_encoder(sequence_output, attention_mask, q, k, v)
+        # alphas = self.adaptive_pool(alphas[0])
+
+
         qkv = self.qv_linear3(sequence_output)
         q, k, v = torch.chunk(qkv, chunks=3, dim=-1)
         text, text_weighted_attns, text_alphas = self.text_encoder(sequence_output, attention_mask, q, k, v)
@@ -422,7 +430,7 @@ class BertForTokenClassification_(BertPreTrainedModel):
         
         alphas = alphas + image_alphas
         
-        logits = self.classifier(torch.cat((text, image, text_image), dim=-1))
+        logits = self.classifier(torch.cat((text, image, image_text, text_image), dim=-1))
 
         # aux_addon_sequence_encoder = self.self_attention_text(sequence_output, attention_mask)
         # aux_addon_sequence_output = aux_addon_sequence_encoder[-1]
