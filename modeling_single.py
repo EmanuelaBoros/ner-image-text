@@ -25,7 +25,7 @@ fc_dropout = 0.4
 
 from transformers import ViTFeatureExtractor, ViTModel
 from transformers import ImageClassificationPipeline, PerceiverForImageClassificationConvProcessing, PerceiverFeatureExtractor, PerceiverForImageClassificationLearned
-
+from biggan import BigGAN
 
 # fmt: off
 class PreNorm(nn.Module):
@@ -184,7 +184,7 @@ class CNN_Encoder(nn.Module):
     """
 
     # def __init__(self, encoded_image_size=14, attention_method="ByPixel"):
-    def __init__(self, encoded_image_size=14, attention_method="ByChannel"):
+    def __init__(self, max_len=256, encoded_image_size=14, attention_method="ByChannel"):
         super(CNN_Encoder, self).__init__()
         self.enc_image_size = encoded_image_size
         self.attention_method = attention_method
@@ -205,7 +205,7 @@ class CNN_Encoder(nn.Module):
         self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
         
         self.conv1 = nn.Conv2d(2048, 768, 1)
-        self.linear1 = nn.Linear(49, 200)
+        self.linear1 = nn.Linear(64, max_len)
         
         self.fine_tune()
 
@@ -310,19 +310,20 @@ class BertForTokenClassification_(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.max_len = 200
+        self.max_len = 256
 
         self.bert = BertModel(config, add_pooling_layer=False)
 
         # self.vit = ViTModel.from_pretrained(IMAGE_MODEL)
-        self.visual_feature = ResNetFeatureExtractor()
-        self.cnn_encoder = CNN_Encoder()
+        # self.visual_feature = ResNetFeatureExtractor()
+        self.cnn_encoder = CNN_Encoder(max_len=self.max_len)
+        self.biggan = BigGAN.from_pretrained('biggan-deep-256')
 
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = torch.nn.Dropout(classifier_dropout)
-        self.classifier = torch.nn.Linear(config.hidden_size * 4, config.num_labels)
+        self.classifier = torch.nn.Linear(config.hidden_size * 2, config.num_labels)
         self.aux_classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
         # self.classifier = torch.nn.Linear(1300, config.num_labels)
 
@@ -333,7 +334,8 @@ class BertForTokenClassification_(BertPreTrainedModel):
         #                                       pos_embed=pos_embed)
         # self.fc_dropout = torch.nn.Dropout(fc_dropout)
         # Initialize weights and apply final processing
-        self.qv_linear2 = nn.Linear(d_model, d_model * 2, bias=False)
+        self.qv_linear2_1 = nn.Linear(d_model, d_model * 2, bias=False)
+        self.qv_linear2_2 = nn.Linear(d_model, d_model * 2, bias=False)
         self.qv_linear3 = nn.Linear(d_model, d_model * 3, bias=False)
 
 
@@ -376,7 +378,7 @@ class BertForTokenClassification_(BertPreTrainedModel):
         self.relu1 = F.relu
         # self.linear1 = nn.Linear(672, 128)
         
-        self.conv1 = nn.Conv1d(400, 200, 1)
+        self.conv1 = nn.Conv1d(self.max_len * 2, self.max_len, 1)
                 
         encoded_image_size = 14
         
@@ -401,36 +403,42 @@ class BertForTokenClassification_(BertPreTrainedModel):
         # image_encoded = self.image_encoder(image_output, image_attention_mask)
         
         image_encoded = self.cnn_encoder(image_ids)
+        truncation = 0.4
+
+        # import pdb;pdb.set_trace()
+        # self.biggan(image_encoded, sequence_output, truncation)
+        # self.biggan(image_encoded, rearrange(sequence_output, "b e s -> b s e"), truncation)
         
-        
+        ### change weight in regards to the image relevance
         q = image_encoded
         
-        kv = self.qv_linear2(sequence_output)
+        kv = self.qv_linear2_1(sequence_output)
         k, v = torch.chunk(kv, chunks=2, dim=-1)
         image_text, weighted_attns, alphas = self.text_image_encoder(image_encoded, image_attention_mask, q, k, v)
-        alphas = self.adaptive_pool(alphas[0])
+        image_text_alphas = self.adaptive_pool(alphas[0])
         
         q = sequence_output
 
-        kv = self.qv_linear2(image_encoded)
+        kv = self.qv_linear2_2(image_encoded)
         k, v = torch.chunk(kv, chunks=2, dim=-1)
         text_image, _, _ = self.text_image_encoder(sequence_output, attention_mask, q, k, v)
-        # alphas = self.adaptive_pool(alphas[0])
+        text_image_alphas = self.adaptive_pool(alphas[0])
 
 
-        qkv = self.qv_linear3(sequence_output)
-        q, k, v = torch.chunk(qkv, chunks=3, dim=-1)
-        text, text_weighted_attns, text_alphas = self.text_encoder(sequence_output, attention_mask, q, k, v)
-        text_alphas = self.adaptive_pool(text_alphas[0])
+        # qkv = self.qv_linear3(sequence_output)
+        # q, k, v = torch.chunk(qkv, chunks=3, dim=-1)
+        # text, text_weighted_attns, text_alphas = self.text_encoder(sequence_output, attention_mask, q, k, v)
+        # text_alphas = self.adaptive_pool(text_alphas[0])
         
-        qkv = self.qv_linear3(image_encoded)
-        q, k, v = torch.chunk(qkv, chunks=3, dim=-1)
-        image, image_weighted_attns, image_alphas = self.text_encoder(image_encoded, image_attention_mask, q, k, v)
-        image_alphas = self.adaptive_pool(image_alphas[0])
+        # qkv = self.qv_linear3(image_encoded)
+        # q, k, v = torch.chunk(qkv, chunks=3, dim=-1)
+        # image, image_weighted_attns, image_alphas = self.text_encoder(image_encoded, image_attention_mask, q, k, v)
+        # image_alphas = self.adaptive_pool(image_alphas[0])
         
-        alphas = alphas + image_alphas
+        # alphas = alphas + image_alphas
+        alphas = image_text_alphas
         
-        logits = self.classifier(torch.cat((text, image, image_text, text_image), dim=-1))
+        logits = self.classifier(torch.cat((image_text, text_image), dim=-1))
 
         # aux_addon_sequence_encoder = self.self_attention_text(sequence_output, attention_mask)
         # aux_addon_sequence_output = aux_addon_sequence_encoder[-1]

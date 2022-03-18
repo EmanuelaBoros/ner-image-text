@@ -131,14 +131,19 @@ def read_examples_from_file(data_dir, language_code, mode):
         for line in f:
             if line.startswith("-DOCSTART-"):
                 doc_index += 1
+                word_index = 0
                 #docd_1_ph_3.final.png#
+            
             if line.startswith("-DOCSTART-") or line.startswith("# id") or line == "" or line == "\n":
+                
                 if words:
                     # image = 'data/conll2003_images/' + mode + '/' + \
                     #     lines[guid_index-1].replace("# id", "").split('\t')[0].replace('"', '').strip() + '.final.png'
-                    
+                    # print(doc_index)
+                    # import pdb;pdb.set_trace()
                     image = 'data/conll2003_images/' + mode + '/doc_' + str(doc_index) + '_ph_' + str(word_index+1) + '.final.png'
                     # import pdb;pdb.set_trace()
+                    word_index += 1
                     if os.path.exists(image):
                         
                         image = cv2.imread(image)
@@ -168,15 +173,16 @@ def read_examples_from_file(data_dir, language_code, mode):
                         #                                              image=image))
                         #     # import pdb;pdb.set_trace()
                         guid_index += 1
-                        word_index += 1
+                        
                         words = []
                         labels = []
                     else:
                         import pdb;pdb.set_trace()
                         #
                         print('data/conll2003_images/' + mode + '/doc_' + str(doc_index) + '_ph_' + str(word_index+1) + '.final.png')
+                    
             else:
-                word_index = 0
+                
                 splits = line.split(" ")
                 words.append(splits[0])
                 if len(splits) > 1:
@@ -186,6 +192,8 @@ def read_examples_from_file(data_dir, language_code, mode):
                     labels.append("O")
         if words:
             # image = 'data/conll2003_images/' + mode + '/' + lines[guid_index-1].replace("# id", "").split('\t')[0].strip() + '.final.png'
+            # print(doc_index)
+            # import pdb;pdb.set_trace()
             image = 'data/conll2003_images/' + mode + '/doc_' + str(doc_index) + '_ph_' + str(word_index+1) + '.final.png'
             # import pdb;pdb.set_trace()
             if os.path.exists(image):

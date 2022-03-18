@@ -288,7 +288,7 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
                 index = 0
                 # import pdb;pdb.set_trace()
                 # scores = F.log_softmax(scores, dim=1) #rearrange(weighted_attns[0], "b e s -> b s e")
-                for word, image, alpha in zip(words, images, alphas):
+                for text, image, alpha in zip(words, images, alphas):
                     
                     plt.imshow(image.numpy()[0], cmap='gray', aspect='auto')
                     
@@ -302,7 +302,7 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
                     # plt.clf()
                     from nltk.tokenize import word_tokenize
                     
-                    text = tokenizer.decode(word).replace('[PAD]', '').replace('[CLS]', '').replace('[SEP]', '').strip()
+                    text = tokenizer.decode(text).replace('[PAD]', '').replace('[CLS]', '').replace('[SEP]', '').strip()
                     # tokens = tokenizer.tokenize(word)
                     tokens = word_tokenize(text)
                     
