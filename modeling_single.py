@@ -10,7 +10,6 @@ import torchvision.models as models
 from einops import rearrange
 from torch import Tensor
 import math
-
 num_layers = 2
 n_heads = 6
 head_dims = 128
@@ -113,69 +112,217 @@ class PositionalEncoding(nn.Module):
         x = self.pe[0, : self.max_len]
         return self.dropout(x).unsqueeze(0)
 
-#      self.init_weights()
+def bi_modal_attention(x, y):
+    
+    ''' 
+    .  stands for dot product 
+    *  stands for elemwise multiplication
+    {} stands for concatenation
+        
+    m1 = x . transpose(y) ||  m2 = y . transpose(x) 
+    n1 = softmax(m1)      ||  n2 = softmax(m2)
+    o1 = n1 . y           ||  o2 = m2 . x
+    a1 = o1 * x           ||  a2 = o2 * y
+       
+    return {a1, a2}
+        
+    '''
+     
+    y1 = rearrange(x, "b e s -> b s e")
+    m1 = torch.matmul(x, y1)
+    n1 = torch.nn.functional.softmax(m1, -1)
+    y1 = rearrange(x, "b e s -> b s e")
+    
+    o1 = torch.matmul(n1, y)
+    
+    a1 = torch.multiply(o1, x)
+    # m1 = torch.dot([x, y], axes=[2, 2])
+    # n1 = torch.nn.functional.softmax(m1)
+    # o1 = torch.dot([n1, y], axes=[2, 1])
+    # a1 = torch.multiply([o1, x])
+
+    m2 = torch.dot([y, x], axes=[2, 2])
+    n2 = torch.nn.functional.softmax(m2)
+    o2 = torch.dot([n2, x], axes=[2, 1])
+    a2 = torch.multiply([o2, y])
+
+    return torch.concatenate([a1, a2])
+
+
+def self_attention(x):
+    
+    ''' 
+    .  stands for dot product 
+    *  stands for elemwise multiplication
+        
+    m = x . transpose(x)
+    n = softmax(m)
+    o = n . x  
+    a = o * x           
+       
+    return a
+        
+    '''
+    x1 = rearrange(x, "b e s -> b s e")
+    m = torch.matmul(x, x1)
+    # m = torch.dot([x, x], axes=[2,2])
+    # n = torch.nn.functional.softmax(m)
+    n1 = torch.nn.functional.softmax(m, -1)
+    o = torch.matmul(n1, x)
+    # o = rearrange(o, "b e s -> b s e")
+    # o = torch.dot([n, x], axes=[2,1])
+    # a = torch.multiply([o, x])
+    a1 = torch.multiply(o, x)
+        
+    return a1
+
+import torchvision
+
+class CNN_Encoder(nn.Module):
+    """
+    CNN_Encoder.
+    """
+
+    # def __init__(self, encoded_image_size=14, attention_method="ByPixel"):
+    def __init__(self, encoded_image_size=14, attention_method="ByChannel"):
+        super(CNN_Encoder, self).__init__()
+        self.enc_image_size = encoded_image_size
+        self.attention_method = attention_method
+
+        resnet = torchvision.models.resnet152(pretrained=True)  # pretrained ImageNet ResNet-101
+
+        # Remove linear and pool layers (since we're not doing classification)
+        # Specifically, Remove: AdaptiveAvgPool2d(output_size=(1, 1)), Linear(in_features=2048, out_features=1000, bias=True)]
+        modules = list(resnet.children())[:-2]
+        self.resnet = nn.Sequential(*modules)
+
+        if self.attention_method == "ByChannel":
+            self.cnn1 = nn.Conv2d(in_channels=2048, out_channels=768, kernel_size=(1, 1), stride=(1, 1), bias=False)
+            self.bn1 = nn.BatchNorm2d(768, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            self.relu = nn.ReLU(inplace=True)
+
+        # Resize image to fixed size to allow input images of variable size
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
+        
+        self.conv1 = nn.Conv2d(2048, 768, 1)
+        self.linear1 = nn.Linear(49, 200)
+        
+        self.fine_tune()
+
+    def forward(self, images):
+        """
+        Forward propagation.
+        :param images: images, a tensor of dimensions (batch_size, 3, image_size, image_size)
+        :return: encoded images [batch_size, encoded_image_size=14, encoded_image_size=14, 2048]
+        """
+        x = self.resnet(images)  # (batch_size, 2048, image_size/32, image_size/32)
+        if self.attention_method == "ByChannel":  # [batch_size, 2048, 8, 8] -> # [batch_size, 512, 8, 8]
+            x = self.relu(self.bn1(self.cnn1(x)))
+        
+        # import pdb;pdb.set_trace()
+        x = rearrange(x, "b e w h -> b e (w h)")
+        
+        # out = self.adaptive_pool(out)  # [batch_size, 2048/512, 8, 8] -> [batch_size, 2048/512, 14, 14]
+        x = self.linear1(x)
+        
+        x = rearrange(x, "b e s -> b s e")
+        # out = out.permute(0, 2, 3, 1)
+        return x
+
+    def fine_tune(self, fine_tune=True):
+        """
+        Allow or prevent the computation of gradients for convolutional blocks 2 through 4 of the encoder.
+        :param fine_tune: Allow?
+        """
+        for p in self.resnet.parameters():
+            p.requires_grad = False
+        # If fine-tuning, only fine-tune convolutional blocks 2 through 4
+        for c in list(self.resnet.children())[5:]:
+            for p in c.parameters():
+                p.requires_grad = fine_tune
+                
 class ResNetFeatureExtractor(nn.Module):
     def __init__(self):
         super().__init__()
 
         # Making the resnet 50 model, which was used in the docformer for the purpose of visual feature extraction
-        self.resnet50 = PerceiverForImageClassificationLearned.from_pretrained("deepmind/vision-perceiver-learned")
+        # self.resnet50 = PerceiverForImageClassificationLearned.from_pretrained("deepmind/vision-perceiver-learned")ResNet101V2
         
-        # self.resnet50 = models.resnet50(pretrained=True)
-        for param in self.resnet50.parameters():
+        self.resnet101 = models.resnet152(pretrained=False)
+        
+        # self.resnet50 = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+        
+        for param in self.resnet101.parameters():
             param.requires_grad = True
         
-        modules = list(self.resnet50.children())[:-2]
-        self.resnet50 = nn.Sequential(*modules)
-        for param in self.resnet50.parameters():
-            param.requires_grad = True
+        modules = list(self.resnet101.children())[:-2]
+        self.resnet101 = nn.Sequential(*modules)
+        # for param in self.resnet50.parameters():
+        #     param.requires_grad = True
 
         # Applying convolution and linear layer
 
-        self.conv1 = nn.Conv2d(224, 768, 1)
         self.relu1 = F.relu
-        self.linear1 = nn.Linear(672, 128)
-
-    def forward(self, x):
-        x = self.resnet50(x)
-        # import pdb;pdb.set_trace()
-        x = rearrange(x, "b e w h -> b h w e")
+        # self.conv1 = nn.Conv2d(800, 800, 1)
+        # self.linear1 = nn.Linear(49, 200)
+        self.conv1 = nn.Conv2d(2048, 768, 1)
+        self.linear1 = nn.Linear(49, 200)
         
+    def forward(self, x):
+
+        # import pdb;pdb.set_trace()
+        # x = self.resnet50[:-2](x)
+        x = self.resnet101(x)
+        print(x.shape)
+        # import pdb;pdb.set_trace()
+        # x = rearrange(x, "b e w h -> b h w e")
         x = self.conv1(x)
+        print(x.shape)
+        
         x = self.relu1(x)
         x = rearrange(x, "b e w h -> b e (w h)")  # b -> batch, e -> embedding dim, w -> width, h -> height
+        print(x.shape)
+        
         x = self.linear1(x)
+        print(x.shape)
+        
         x = rearrange(x, "b e s -> b s e")  # b -> batch, e -> embedding dim, s -> sequence length
+        print(x.shape)
+        
         return x
 
+    
 from transformers import ViTFeatureExtractor, ViTModel
 from modules.transformer import (TransformerEncoder, MultiHeadAttn, 
                                  TransformerLayer, RelativeMultiHeadAttn, 
-                                 MultiHeadAttnImage, TransformerEncoderImage)
+                                 MultiHeadAttnImage, TransformerEncoderImage,
+                                 TransformerLayerImage)
 from copy import deepcopy
-
+from attentions import  ScaledDotProductAttention, CustomizingAttention, MultiHeadAttention
+    
 IMAGE_MODEL = 'google/vit-base-patch16-224'
 
 #class BertForTokenClassification_(BertPreTrainedModel):
-class BertForTokenClassification_(RobertaPreTrainedModel):
+class BertForTokenClassification_(BertPreTrainedModel):
 
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
 
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.max_len = 128
+        self.max_len = 200
 
         self.bert = BertModel(config, add_pooling_layer=False)
 
-        self.vit = ViTModel.from_pretrained(IMAGE_MODEL)
+        # self.vit = ViTModel.from_pretrained(IMAGE_MODEL)
         self.visual_feature = ResNetFeatureExtractor()
+        self.cnn_encoder = CNN_Encoder()
 
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = torch.nn.Dropout(classifier_dropout)
-        self.classifier = torch.nn.Linear(config.hidden_size * 1, config.num_labels)
+        self.classifier = torch.nn.Linear(config.hidden_size * 3, config.num_labels)
         self.aux_classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
         # self.classifier = torch.nn.Linear(1300, config.num_labels)
 
@@ -186,7 +333,9 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         #                                       pos_embed=pos_embed)
         # self.fc_dropout = torch.nn.Dropout(fc_dropout)
         # Initialize weights and apply final processing
-#        self.post_init()
+        self.qv_linear2 = nn.Linear(d_model, d_model * 2, bias=False)
+        self.qv_linear3 = nn.Linear(d_model, d_model * 3, bias=False)
+
 
         attn_type = 'transformer'
         if attn_type == 'transformer':
@@ -202,7 +351,15 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         self.image_transformer_layer = TransformerLayer(d_model, deepcopy(self.self_attention_image), feedforward_dim, after_norm, dropout)
         
         
+        # self.text_encoder = TransformerEncoder(num_layers, d_model, n_heads, feedforward_dim, dropout)
+        self.image_encoder = TransformerEncoder(num_layers, d_model, n_heads, feedforward_dim, dropout)
+        
         self.text_image_encoder = TransformerEncoderImage(num_layers, d_model, n_heads, feedforward_dim, dropout)
+        self.text_encoder = TransformerEncoderImage(num_layers, d_model, n_heads, feedforward_dim, dropout)
+        
+        self.simple_text_image_encoder = TransformerEncoder(num_layers, d_model, n_heads, feedforward_dim, dropout)
+        
+        self.text_image_transformer_layer = TransformerLayerImage(d_model, deepcopy(self.self_attention_text_image), feedforward_dim, after_norm, dropout)
         
         self.position_embeddings_v = PositionalEncoding(
             d_model=config.hidden_size * 2,
@@ -211,7 +368,21 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         )
         
         self.gate = nn.Linear(config.hidden_size * 2, config.hidden_size)
-
+        self.scaled_attention = ScaledDotProductAttention(dim=config.hidden_size)
+        self.multihead_attention = MultiHeadAttention(d_model, n_heads)
+        self.customizing_attention = CustomizingAttention(hidden_dim = config.hidden_size, num_heads = 4, conv_out_channel = 10)
+        
+        self.gate_image_text = nn.Linear(self.max_len * 2, self.max_len)
+        self.relu1 = F.relu
+        # self.linear1 = nn.Linear(672, 128)
+        
+        self.conv1 = nn.Conv1d(400, 200, 1)
+                
+        encoded_image_size = 14
+        
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
+        self.decode_step = nn.LSTMCell(config.hidden_size, 200, bias=True)  #
+        
     def forward(self, input_ids, src_probs=None, attention_mask=None, image_attention_mask=None, token_type_ids=None, image_ids=None,
                 position_ids=None, head_mask=None, labels=None, loss_ignore_index=-100):
         
@@ -225,20 +396,75 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
 
         sequence_output = outputs[0]
         sequence_output = self.dropout(sequence_output)
+
+        # image_output = self.visual_feature(image_ids)
+        # image_encoded = self.image_encoder(image_output, image_attention_mask)
         
+        image_encoded = self.cnn_encoder(image_ids)
+        
+        
+        q = image_encoded
+        
+        kv = self.qv_linear2(sequence_output)
+        k, v = torch.chunk(kv, chunks=2, dim=-1)
+        text_image, weighted_attns, alphas = self.text_image_encoder(image_encoded, image_attention_mask, q, k, v)
+        alphas = self.adaptive_pool(alphas[0])
+        
+        qkv = self.qv_linear3(sequence_output)
+        q, k, v = torch.chunk(qkv, chunks=3, dim=-1)
+        text, text_weighted_attns, text_alphas = self.text_encoder(sequence_output, attention_mask, q, k, v)
+        text_alphas = self.adaptive_pool(text_alphas[0])
+        
+        qkv = self.qv_linear3(image_encoded)
+        q, k, v = torch.chunk(qkv, chunks=3, dim=-1)
+        image, image_weighted_attns, image_alphas = self.text_encoder(image_encoded, image_attention_mask, q, k, v)
+        image_alphas = self.adaptive_pool(image_alphas[0])
+        
+        alphas = alphas + image_alphas
+        
+        logits = self.classifier(torch.cat((text, image, text_image), dim=-1))
+
         # aux_addon_sequence_encoder = self.self_attention_text(sequence_output, attention_mask)
         # aux_addon_sequence_output = aux_addon_sequence_encoder[-1]
+        # q, k, v x = rearrange(x, "b e s -> b s e")
+        # import pdb;pdb.set_trace()
+        # scores = F.log_softmax(logits, dim=1)
         
-        # text_layer = self.text_transformer_layer(aux_addon_sequence_encoder, attention_mask)
+        # import pdb;pdb.set_trace()
+        
+        # image_path = ''
+        # rev_word_map = {}
+        # # import pdb;pdb.set_trace()
+        # visualize_att(image_path, sequence_output, alphas, rev_word_map, smooth=True)
+        # # text_layer = self.text_transformer_layer(aux_addon_sequence_encoder, attention_mask)
+        # text_layer = self.text_transformer_layer(sequence_output, attention_mask)
 
         # aux_text_feats = self.aux_classifier(aux_addon_sequence_output)
 
-        image_output = self.visual_feature(image_ids)
+        # text_layer = self.text_image_transformer_layer(sequence_output, attention_mask)
+        # image_layer = self.text_image_transformer_layer(sequence_output, image_attention_mask)
+        # text_image = torch.cat((sequence_output, image_output), dim=1)
+        # text_image_mask = torch.cat((attention_mask, image_attention_mask), dim=1)
         
-        final_output = self.text_image_encoder(sequence_output, attention_mask, image_output)
+        # text_image = self.simple_text_image_encoder(text_image, text_image_mask)
+        # text_image = self.conv1(text_image)
+        # text_image = self.relu1(text_image)
+        
+        # import pdb;pdb.set_trace()
+        # text_image = rearrange(text_image, "b e s -> b s e")
+        # text_image = self.gate_image_text(text_image)
+        
+        # text_image = rearrange(text_image, "b e s -> b s e")
+
+        # import pdb;pdb.set_trace()
+        # self.simple_text_image_encoder
+        # context, attn = self.multihead_attention(image_layer, text_layer, sequence_output)
+
         # import pdb;pdb.set_trace()
         # image_output = image_output['pooler_output']
-
+        
+        # final_output = torch.cat((text_layer, text_image_layer), dim=-1)
+        
         # aux_addon_image_encoder = self.self_attention_image(image_output, image_attention_mask)
         # aux_addon_image_output = aux_addon_image_encoder[-1]
         
@@ -273,7 +499,7 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
         # print(final_output.shape)
         # final_output = self.self_attention_text_image(final_output)
         
-        logits = self.classifier(final_output)
+        
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
@@ -330,7 +556,7 @@ class BertForTokenClassification_(RobertaPreTrainedModel):
 
             outputs = (loss_KD,) + outputs
 
-        return outputs  # (loss_KD), (loss), scores, (hidden_states), (attentions)
+        return outputs, weighted_attns, alphas   # (loss_KD), (loss), scores, (hidden_states), (attentions)
 
 
 

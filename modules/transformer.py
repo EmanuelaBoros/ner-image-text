@@ -78,8 +78,10 @@ class MultiHeadAttnImage(nn.Module):
             self.scale = math.sqrt(d_model//n_head)
         else:
             self.scale = 1
+            
+        self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x, mask, q):
+    def forward(self, x, mask, q, k, v):
         """
 
         :param x: bsz x max_len x d_model
@@ -87,8 +89,8 @@ class MultiHeadAttnImage(nn.Module):
         :return:
         """
         batch_size, max_len, d_model = x.size()
-        x = self.qkv_linear(x)
-        k, v = torch.chunk(x, 2, dim=-1)
+        # x = self.qkv_linear(x)
+        # k, v = torch.chunk(x, 2, dim=-1)
         # import pdb;pdb.set_trace()
         q = q.view(batch_size, max_len, self.n_head, -1).transpose(1, 2)
         k = k.view(batch_size, max_len, self.n_head, -1).permute(0, 2, 3, 1)
@@ -96,15 +98,22 @@ class MultiHeadAttnImage(nn.Module):
 
         attn = torch.matmul(q, k)  # batch_size x n_head x max_len x max_len
         attn = attn/self.scale
-        attn.masked_fill_(mask=mask[:, None, None].eq(0), value=float('-inf'))
-
-        attn = F.softmax(attn, dim=-1)  # batch_size x n_head x max_len x max_len
-        attn = self.dropout_layer(attn)
+        
+        if mask is not None:
+            attn.masked_fill_(mask=mask[:, None, None].eq(0), value=float('-inf'))
+        
+        alpha = F.softmax(attn, dim=-1)  # batch_size x n_head x max_len x max_len
+        attn = self.dropout_layer(alpha)
         v = torch.matmul(attn, v)  # batch_size x n_head x max_len x d_model//n_head
+        
         v = v.transpose(1, 2).reshape(batch_size, max_len, -1)
+        
+        gate = self.sigmoid(self.fc(v))
+        weighted_attn = gate * v
+        
         v = self.fc(v)
-
-        return v
+        
+        return v, weighted_attn, alpha
 
 class TransformerLayer(nn.Module):
     def __init__(self, d_model, self_attn, feedforward_dim, after_norm, dropout):
@@ -171,7 +180,8 @@ class TransformerEncoder(nn.Module):
             self.pos_embed = SinusoidalPositionalEmbedding(d_model, 0, init_size=1024)
         elif pos_embed == 'fix':
             self.pos_embed = LearnedPositionalEmbedding(1024, d_model, 0)
-
+            
+        attn_type = 'transformer'
         if attn_type == 'transformer':
             self_attn = MultiHeadAttn(d_model, n_head, dropout_attn, scale=scale)
         elif attn_type == 'adatrans':
@@ -220,9 +230,8 @@ class TransformerLayerImage(nn.Module):
                                  nn.Linear(feedforward_dim, d_model),
                                  nn.Dropout(dropout))
 
-    def forward(self, x, mask, q):
+    def forward(self, x, mask, q, k, v):
         """
-
         :param x: batch_size x max_len x hidden_size
         :param mask: batch_size x max_len, where 0 is pad
         :return: batch_size x max_len x hidden_size
@@ -231,7 +240,8 @@ class TransformerLayerImage(nn.Module):
         if not self.after_norm:
             x = self.norm1(x)
 
-        x = self.self_attn(x, mask, q)
+        x, weighted_attn, attn = self.self_attn(x, mask, q, k, v)
+        
         x = x + residual
         if self.after_norm:
             x = self.norm1(x)
@@ -242,7 +252,7 @@ class TransformerLayerImage(nn.Module):
         x = residual + x
         if self.after_norm:
             x = self.norm2(x)
-        return x
+        return x, weighted_attn, attn
     
 class TransformerEncoderImage(nn.Module):
     def __init__(self, num_layers, d_model, n_head, feedforward_dim, dropout, after_norm=True, attn_type='naive',
@@ -268,7 +278,7 @@ class TransformerEncoderImage(nn.Module):
         self.layers = nn.ModuleList([TransformerLayerImage(d_model, deepcopy(self_attn), feedforward_dim, after_norm, dropout)
                        for _ in range(num_layers)])
 
-    def forward(self, x, mask, q):
+    def forward(self, x, mask, q, k, v):
         """
 
          :param x: batch_size x max_len
@@ -277,10 +287,13 @@ class TransformerEncoderImage(nn.Module):
         """
         if self.pos_embed is not None:
             x = x + self.pos_embed(mask)
-
+        
+        alphas, weighted_attns = [], []
         for layer in self.layers:
-            x = layer(x, mask, q)
-        return x
+            x, weighted_attn, alpha = layer(x, mask, q, k, v)
+            alphas.append(alpha)
+            weighted_attns.append(weighted_attn)
+        return x, weighted_attns, alphas
     
 def make_positions(tensor, padding_idx):
     """Replace non-padding symbols with their position numbers.

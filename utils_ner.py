@@ -69,6 +69,48 @@ train_transform = A.Compose(
         # ToTensorV2(),
     ]
 )
+
+
+from torchvision import datasets, models, transforms
+normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+
+data_transforms = {
+    'train':
+    transforms.Compose([
+        # transforms.Resize((224,224)),
+        # transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
+        # transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        # normalize
+    ]),
+    'validation':
+    transforms.Compose([
+        # transforms.Resize((224,224)),
+        transforms.ToTensor(),
+        # normalize
+    ]),
+}
+
+
+data_transforms = {
+    'train':
+    transforms.Compose([
+        transforms.Resize((256,256)),
+        # transforms.Resize((224,224)),
+        # transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
+        # transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize
+    ]),
+    'validation':
+    transforms.Compose([
+        transforms.Resize((256,256)),
+        transforms.ToTensor(),
+        normalize
+    ]),
+}
+    
 def read_examples_from_file(data_dir, language_code, mode):
     # file_path = os.path.join(data_dir, "{}_{}.conll".format(language_code, mode))
     file_path = os.path.join(data_dir, "{}.conll".format(mode))
@@ -177,7 +219,7 @@ IMAGE_MODEL = 'google/vit-base-patch16-224'
 feature_extractor = ViTFeatureExtractor.from_pretrained(IMAGE_MODEL)
 from transformers import ImageClassificationPipeline, PerceiverForImageClassificationConvProcessing, PerceiverFeatureExtractor
  
-feature_extractor = PerceiverFeatureExtractor.from_pretrained("deepmind/vision-perceiver-learned")
+# feature_extractor = PerceiverFeatureExtractor.from_pretrained("deepmind/vision-perceiver-learned")
 
 def convert_examples_to_features(examples,
                                  label_list,
@@ -301,12 +343,16 @@ def convert_examples_to_features(examples,
             logger.info("label_ids: %s", " ".join([str(x) for x in label_ids]))
 
 
-        # image_ids = feature_extractor(images=example.image, return_tensors="pt")[
-        #     'pixel_values'].squeeze()
-        image = Image.fromarray(example.image, 'RGB')
-
-        image_ids = feature_extractor(images=image, return_tensors="pt").pixel_values.squeeze()
+        # image = cv2.imread(image)
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         # import pdb;pdb.set_trace()
+        image_ids = data_transforms['train'](Image.fromarray(example.image))
+                     
+        # image_ids = feature_extractor(images=example.image, return_tensors="pt")['pixel_values'].squeeze()
+        
+        # image = Image.fromarray(example.image, 'RGB')
+        # image_ids = feature_extractor(images=image, return_tensors="pt").pixel_values.squeeze()
+
         features.append(
                 InputFeatures(input_ids=input_ids,
                               input_mask=input_mask,

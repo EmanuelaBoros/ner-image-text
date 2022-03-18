@@ -33,10 +33,22 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Tenso
 from torch.utils.data.distributed import DistributedSampler
 from utils_ner import convert_examples_to_features, get_labels, read_examples_from_file
 from transformers import get_linear_schedule_with_warmup
-from transformers import AdamW
+from torch.optim import AdamW #torch.optim.AdamW
 #from transformers import WEIGHTS_NAME#, BertConfig, BertTokenizer#, BertForTokenClassification
 #from transformers import RobertaConfig, RobertaForTokenClassification, RobertaTokenizer
 from modeling_single import BertForTokenClassification_
+import torch
+import torch.nn.functional as F
+import numpy as np
+import json
+import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import skimage.transform
+import argparse
+from cv2 import imread
+from cv2 import resize
+from PIL import Image
 
 from transformers import AutoTokenizer, AutoConfig
 
@@ -62,6 +74,72 @@ def set_seed(args):
     torch.backends.cudnn.deterministic = True
 
 
+def visualize_att(image_path, words, text, alphas, smooth=True, idx=0):
+    """
+    Visualizes caption with weights at every word.
+    Adapted from paper authors' repo: https://github.com/kelvinxu/arctic-captions/blob/master/alpha_visualization.ipynb
+    :param image_path: path to image that has been captioned
+    :param seq: caption
+    :param alphas: weights
+    :param rev_word_map: reverse word mapping, i.e. ix2word
+    :param smooth: smooth weights?
+    """
+    
+    h, w = 14, 14+10
+    image = Image.open(image_path)
+    image = image.resize([h * w, h * w], Image.LANCZOS)
+    
+    # alphas = alphas.squeeze()
+    # for t in range(len(words)):
+    #     if t > 14:
+    #         break
+    #     plt.subplot(np.ceil(len(words) / 5.), 5, t + 1)
+
+    #     plt.text(0, 1, '%s' % (words[t]), color='black', backgroundcolor='white', fontsize=12)
+    #     plt.imshow(image)
+
+    #     # import pdb;pdb.set_trace()
+    #     # current_alpha = alphas[t, :].detach()
+    #     current_alpha = alphas.detach()
+    #     if smooth:
+    #         alpha = skimage.transform.pyramid_expand(current_alpha.numpy().squeeze(), upscale=w, sigma=8)
+    #     else:
+    #         alpha = skimage.transform.resize(current_alpha.numpy().squeeze(), [h * w, h * w])
+            
+    #     # import pdb;pdb.
+    #     if t == 0:
+    #         plt.imshow(alpha, alpha=0)
+    #     else:
+    #         plt.imshow(alpha, alpha=0.8)
+    #     plt.set_cmap(cm.Greys_r)
+    #     plt.axis('off')
+    # plt.show()
+    # plt.subplot(np.ceil(len(words) / 5.), 5, t + 1)
+
+    plt.text(0, 1, '%s' % (text), color='black', backgroundcolor='white', fontsize=12)
+    plt.imshow(image)
+
+    # import pdb;pdb.set_trace()
+    # current_alpha = alphas[t, :].detach()
+    current_alpha = alphas.detach()
+    if smooth:
+        alpha = skimage.transform.pyramid_expand(current_alpha.numpy().squeeze(), upscale=w, sigma=8)
+    # else:
+    #     alpha = skimage.transform.resize(current_alpha.numpy().squeeze(), [h * w, h * w])
+        
+    # import pdb;pdb.
+    # if t == 0:
+
+    plt.imshow(alpha, alpha=0.8)
+    plt.set_cmap(cm.Greys_r)
+    plt.axis('off')
+    plt.savefig(image_path.replace('.png', '_alpha.png'), bbox_inches='tight')
+    # import pdb;pdb.set_trace()
+    plt.figure().clear()
+    plt.close()
+    plt.cla()
+    plt.clf()
+    
 def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token_label_id):
     """ Train the model """
     if args.local_rank in [-1, 0]:
@@ -140,8 +218,7 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
                       # XLM and RoBERTa don"t use segment_ids
                       "labels": batch[5].to(args.device) if len(batch) <= 6 else batch[-1]} # add hard-label scheme
             
-#            import pdb;pdb.set_trace()
-            outputs = model(**inputs)
+            outputs, weighted_attns, alphas = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
 
             if args.n_gpu > 1:
@@ -174,7 +251,8 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
                         logger.info("===== evaluate_during_training =====")
                         # results, _ = evaluate(args, model, tokenizer, labels, pad_token_label_id, mode="dev"+args.context, language_code=args.language_code_test)
                         # import pdb;pdb.set_trace()
-                        results, _ = evaluate(args, model, eval_dataset, labels, pad_token_label_id, mode="dev"+args.context, language_code=args.language_code_test)
+                        results, _ = evaluate(args, model, eval_dataset, labels, pad_token_label_id, 
+                                              mode="dev"+args.context, language_code=args.language_code_test)
 
                         for key, value in results.items():
                             tb_writer.add_scalar("eval_{}".format(key), value, global_step)
@@ -202,6 +280,42 @@ def train(args, model, train_dataset, eval_dataset, tokenizer, labels, pad_token
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 break
+            
+            if (step+1) % 400 == 0:
+            # if step % 100 == 0:
+                images = batch[4]
+                words = batch[0]
+                index = 0
+                # import pdb;pdb.set_trace()
+                # scores = F.log_softmax(scores, dim=1) #rearrange(weighted_attns[0], "b e s -> b s e")
+                for word, image, alpha in zip(words, images, alphas):
+                    
+                    plt.imshow(image.numpy()[0], cmap='gray', aspect='auto')
+                    
+                    # import pdb;pdb.set_trace()
+                    plt.axis('off')
+                    plt.savefig(str(index) + '_step' + str(step) + '.png', bbox_inches='tight')
+                    plt.figure().clear()
+                    
+                    # plt.close()
+                    # plt.cla()
+                    # plt.clf()
+                    from nltk.tokenize import word_tokenize
+                    
+                    text = tokenizer.decode(word).replace('[PAD]', '').replace('[CLS]', '').replace('[SEP]', '').strip()
+                    # tokens = tokenizer.tokenize(word)
+                    tokens = word_tokenize(text)
+                    
+                    # print(word)
+                    alphasx = torch.chunk(alpha, 6, dim=0)
+                    
+                    for alphax in alphasx:
+                        # try:
+                            visualize_att(str(index) + '_step' + str(step) + '.png', tokens, text, alphax.cpu(), smooth=True)
+
+                    index += 1
+                
+                
         if args.max_steps > 0 and global_step > args.max_steps:
             break
 
@@ -403,7 +517,7 @@ def evaluate(args, model, eval_dataset, labels, pad_token_label_id, mode, prefix
                       "image_ids": batch[4],
                       "labels": batch[5]}
             
-            outputs = model(**inputs)
+            outputs, weighted_attns, alphas = model(**inputs)
             try:
               tmp_eval_loss, logits = outputs[:2]
             except:
