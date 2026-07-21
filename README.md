@@ -1,4 +1,4 @@
- NER Image Text
+# NER Image Text
 
 Multimodal named entity recognition experiments that combine text representations with visual features generated for entity mentions or phrases.
 
@@ -16,4 +16,30 @@ The project builds on Hugging Face Transformers for token classification and add
 | `attentions.py`, `layers.py`, `modules/` | Attention layers and transformer utilities used by the multimodal models. |
 | `image_gen/imagine_multiconer.py` | Utility script for generating images from text phrases using Big Sleep. |
 | `data/conll2003_images/` | Small CoNLL-style sample files. |
+
+
+## Task
+
+The code is designed for token-level NER with CoNLL-style labels:
+
+```text
+O
+B-PER / I-PER
+B-LOC / I-LOC
+B-MISC / I-MISC
+B-ORG / I-ORG
+```
+
+The default loader expects one token per line and a blank line between sentences. The final column is treated as the NER label.
+
+Example:
+
+```text
+EU NNP I-NP I-ORG
+rejects VBZ I-VP O
+German JJ I-NP I-MISC
+call NN I-NP O
+```
+
+
 
