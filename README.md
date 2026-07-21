@@ -68,6 +68,55 @@ data/conll2003_images/test/doc_1_ph_1.final.png
 
 The repository includes `train_small.conll` and `test_small.conll` as sample text files, but it does not include the full generated image folders. To run the default scripts without modifying the loader, prepare the expected `train.conll`, `dev.conll`, and `test.conll` files and matching images.
 
+## Installation
+
+Create an environment with PyTorch and the main Python dependencies:
+
+```bash
+pip install torch torchvision transformers seqeval tensorboardX tqdm numpy pillow opencv-python albumentations scikit-image matplotlib einops
+```
+
+The image generation utility also depends on the bundled Big Sleep code and its own deep learning stack. Use it separately from model training if you need to generate phrase images.
+
+## Training
+
+A typical training command for `main_single.py` is:
+
+```bash
+TOKENIZERS_PARALLELISM=false python main_single.py \
+  --data_dir data/conll2003_images/ \
+  --output_dir outputs/ner-image-text \
+  --do_train \
+  --evaluate_during_training \
+  --per_gpu_train_batch_size 4 \
+  --per_gpu_eval_batch_size 4 \
+  --model_type bert \
+  --model_name_or_path bert-base-cased \
+  --gpu_ids 0 \
+  --logging_steps 100 \
+  --overwrite_cache
+```
+
+To train the NER-ViT variant:
+
+```bash
+TOKENIZERS_PARALLELISM=false python main_nervit.py \
+  --data_dir data/conll2003_images/ \
+  --output_dir outputs/ner-vit \
+  --do_train \
+  --evaluate_during_training \
+  --per_gpu_train_batch_size 4 \
+  --per_gpu_eval_batch_size 4 \
+  --model_type bert \
+  --model_name_or_path bert-base-cased \
+  --gpu 0 \
+  --logging_steps 100 \
+  --overwrite_cache
+```
+
+Both scripts save model checkpoints, tokenizer files, logs, and training arguments under the selected `--output_dir`.
+
+
 
 
 
