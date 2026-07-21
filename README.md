@@ -41,5 +41,33 @@ German JJ I-NP I-MISC
 call NN I-NP O
 ```
 
+## Data Layout
+
+The training scripts expect a data directory with CoNLL files named by split:
+
+```text
+data/conll2003_images/
+  train.conll
+  dev.conll
+  test.conll
+```
+
+For each sentence/example, `utils_ner.py` also looks for a corresponding image under:
+
+```text
+data/conll2003_images/<split>/doc_<doc_index>_ph_<phrase_index>.final.png
+```
+
+For example:
+
+```text
+data/conll2003_images/train/doc_1_ph_1.final.png
+data/conll2003_images/dev/doc_1_ph_1.final.png
+data/conll2003_images/test/doc_1_ph_1.final.png
+```
+
+The repository includes `train_small.conll` and `test_small.conll` as sample text files, but it does not include the full generated image folders. To run the default scripts without modifying the loader, prepare the expected `train.conll`, `dev.conll`, and `test.conll` files and matching images.
+
+
 
 
