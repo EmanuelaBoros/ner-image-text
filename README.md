@@ -116,7 +116,55 @@ TOKENIZERS_PARALLELISM=false python main_nervit.py \
 
 Both scripts save model checkpoints, tokenizer files, logs, and training arguments under the selected `--output_dir`.
 
+## Prediction
 
+After training, run prediction from a saved output directory:
+
+```bash
+TOKENIZERS_PARALLELISM=false python main_single.py \
+  --data_dir data/conll2003_images/ \
+  --output_dir outputs/ner-image-text \
+  --do_predict \
+  --per_gpu_eval_batch_size 4 \
+  --model_type bert \
+  --model_name_or_path bert-base-cased \
+  --gpu_ids 0
+```
+
+Prediction writes timestamped result and prediction files to `--output_dir`.
+
+## Image Generation
+
+`image_gen/imagine_multiconer.py` can generate images from a tab-separated CSV file containing phrase IDs and text prompts.
+
+```bash
+python image_gen/imagine_multiconer.py \
+  --csv_file path/to/phrases.tsv \
+  --out_path data/conll2003_images/train \
+  --log_file imagine_log.lg \
+  --tmp_file currents.tmp
+```
+
+The script writes `.final.png` images that can be used by the multimodal NER loader. Check the naming convention before training, because the loader expects `doc_<doc_index>_ph_<phrase_index>.final.png`.
+
+## Practical Notes
+
+- The scripts currently assume CUDA-oriented execution. CPU-only use may require small changes to device setup.
+- Hugging Face models such as `bert-base-cased` and ViT checkpoints are downloaded at runtime unless already cached.
+- `utils_ner.py` currently uses a built-in CoNLL label list rather than reading `--labels` from disk.
+- Missing image files trigger a debugger breakpoint in the loader, so verify the image paths before launching long runs.
+- Cached feature files are written into the data directory. Use `--overwrite_cache` after changing tokenization, labels, image preprocessing, or data files.
+
+## Outputs
+
+Training and prediction create:
+
+- model checkpoints
+- tokenizer/config files
+- `training_args.bin`
+- TensorBoard logs under `<output_dir>/logs`
+- prediction result files such as `test_results-...txt`
+- token-level prediction files such as `test_predictions-...txt`
 
 
 
